@@ -190,3 +190,47 @@ fn main() {
         .mount("/spider", routes![crawl, get_urls, get_url_count])
         .launch();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_domain_to_url() {        
+        assert!(convert_domain_to_url(String::from("abcd")).is_err(), "Invalid Domain Name!");
+        assert!(convert_domain_to_url(String::from("abcd.com.")).is_err(), "Invalid Domain Name!");
+        assert!(convert_domain_to_url(String::from("arstechnica.com")).is_ok(), "http://www.arstechnica.com");
+    }
+
+    #[test]
+    fn test_get_doc_from_url() {
+      // This can't be unit tested here as it takes a valid url and fires http get request from inside
+      // and creates the dom out it.  
+      assert_eq!("tested", "tested");
+    }
+
+    #[test]
+    ///
+    /// The input is
+    /// 
+    /// <p>You can reach Michael at:</p>
+    /// <ul>
+    /// <li><a href="https://example.com">Website</a></li>
+    /// <li><a href="mailto:m.bluth@example.com">Email</a></li>
+    /// <li><a href="https://html.com/attributes/a-href/">Learn about the a href attribute</a></li>
+    /// <li><a href="tel:+123456789">Phone</a></li>
+    /// <li><a href="https://html.com/attributes/a-href/">Learn about the a href attribute Again</a></li>
+    /// </ul>
+    /// 
+    /// There are only three valid urls, but one is a duplicate, so effectively it should return only two urls.
+    /// 
+    /// 
+    fn test_get_urls_from_doc() {
+        let markup = String::from("<p>You can reach Michael at:</p><ul><li><a href=\"https://example.com\">Website</a></li><li><a href=\"mailto:m.bluth@example.com\">Email</a></li><li><a href=\"https://html.com/attributes/a-href/\">Learn about the a href attribute</a></li><li><a href=\"tel:+123456789\">Phone</a></li><li><a href=\"https://html.com/attributes/a-href/\">Learn about the a href attribute Again</a></li></ul>");
+
+        let doc = Document::from_read(markup.as_bytes()).unwrap();
+        let urls = get_urls_from_doc(doc);
+        assert_eq!(urls.len(), 2);
+    }
+
+}
