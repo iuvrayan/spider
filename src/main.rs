@@ -40,7 +40,14 @@ fn crawl(name : &RawStr) -> String {
     hm_urls_pages.insert(url.to_string(), doc.clone());
 
     let mut vec_urls = get_urls_from_doc(doc.clone());
-    //println!("initial urls {:?} \n", vec_urls);     
+    //println!("initial urls {:?} \n", vec_urls); 
+     
+    if vec_urls.len() > 20 {
+        for i in 20..vec_urls.len() {
+            vec_urls.remove(i);
+        }
+    }
+    
 
     while let Some(top) = vec_urls.pop() {
         println!("the top url {} \n", top);
@@ -54,24 +61,16 @@ fn crawl(name : &RawStr) -> String {
             vec_urls.append(&mut vec_sub_urls);
         }
     }
-
-    /*
     
-    let vec_urls = Arc::new(Mutex::new(vec![""]));
-
-    for i in 0..3 {
-      let cloned_v = v.clone();
-      thread::spawn(move || {
-         cloned_v.lock().unwrap().push(i);
-      });
-    }
-    */
     return "Successfully Crawled!".to_string();
 }
 
 fn get_doc_from_url(url : String) -> select::document::Document {
     //Make the GET request and return the Document
     println!("running url : {}\n", url);
+    if url == "https://www.google.com/" || url == "https://google.com/" {
+        return Document::from_read("".as_bytes()).unwrap();
+    }
     match reqwest::get(&url) {
         Err(_) => Document::from_read("".as_bytes()).unwrap(),
         Ok(resp) => Document::from_read(resp).unwrap(),
@@ -84,11 +83,11 @@ fn get_urls_from_doc(doc : select::document::Document) -> Vec<String> {
 
     doc.find(Name("a"))
     .filter_map(|n| n.attr("href"))
-    .for_each(|x| vec_urls.push(x.to_string()));
+    .for_each(|x| if !x.contains("?") && x.contains("//") && !vec_urls.contains(&x.to_string()) {vec_urls.push(x.to_string())});
 
     for url in &vec_urls {
         println!("{} \n", url);
-    }
+    }    
 
     return vec_urls;
 }
@@ -109,18 +108,6 @@ fn get_url_count(domain : &RawStr) -> String {
 }
 */
 
-fn main() {  
-    let doc = Document::from_read("".as_bytes()).unwrap();
-    let mut vec_urls : Vec<String> = Vec::new();
-
-    doc.find(Name("a"))
-    .filter_map(|n| n.attr("href"))
-    .for_each(|x| vec_urls.push(x.to_string()));
-
-    for url in &vec_urls {
-        println!("{} \n", url);
-    }
-    println!("url vector : ============= ===           === {:?}", vec_urls);
-
+fn main() {
     rocket::ignite().mount("/spider", routes![crawl, get_urls]).launch();  
 }
