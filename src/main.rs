@@ -34,51 +34,55 @@ fn crawl(name : &RawStr) -> String {
     //create HashMap to hold all the URLs, and the correcsponding for this domain
     let mut hm_urls_pages = HashMap::new();
 
-    //get the document corresponding to the URL, and store the document against the URL
-    let doc = get_doc_from_url(url.to_string());
+    //push the domain url into the vec
+    let mut vec_urls : Vec<String> = Vec::new();
+    vec_urls.push(url);
 
-    //insert the document aginst the url
-    hm_urls_pages.insert(url.to_string(), doc.clone());
-
-    //
-    let mut vec_urls = get_urls_from_doc(doc.clone());
-    //println!("initial urls {:?} \n", vec_urls);
-
-    if vec_urls.is_empty() {
-        return "No Links found".to_string();
-    }
-
-    let mut cur_url_index = 1;
+    let mut cur_url_index = 0;
     while let Some(top) = vec_urls.get(cur_url_index) {
         println!("the top url {} \n", *top);        
         if !hm_urls_pages.contains_key(top) {
-            let sub_doc = get_doc_from_url(top.to_string());         
-            hm_urls_pages.insert(top.to_string(), sub_doc.clone());
+            let (body, sub_doc) = get_doc_from_url(top.to_string());         
+            hm_urls_pages.insert(top.to_string(), body);
             
-            let mut vec_sub_urls = get_urls_from_doc(sub_doc.clone());
+            let mut vec_sub_urls = get_urls_from_doc(sub_doc);
 
             if vec_urls.is_empty() {
                 return "No more Links found".to_string();
             }
 
             vec_urls.append(&mut vec_sub_urls);
-            if vec_urls.len() >= 1000 { break; }
+            if vec_urls.len() >= 100 { break; }
         }
         cur_url_index += 1;
     }
+
+    // Serialize to a file, the format is inferred from the file extension
+    let mut fname = name_str.to_string();
+    fname.push_str(".json");
+    serde_any::to_file(fname, &hm_urls_pages).unwrap();
     
     return "Successfully Crawled!".to_string();
 }
 
-fn get_doc_from_url(url : String) -> select::document::Document {
+fn get_doc_from_url(url : String) -> (String, select::document::Document) {
     //Make the GET request and return the Document
-    println!("running url : {}\n", url);
-    if url == "https://www.google.com/" || url == "https://google.com/" {
-        return Document::from_read("".as_bytes()).unwrap();
-    }
-    match reqwest::get(&url) {
-        Err(_) => Document::from_read("".as_bytes()).unwrap(),
-        Ok(resp) => Document::from_read(resp).unwrap(),
+    println!("running url : {}\n", url); 
+    
+    let resp = reqwest::get(&url);
+    //.unwrap().text_with_charset("utf-8").unwrap();
+    
+    match resp {
+        Err(_) => {(String::from(""), Document::from_read("".as_bytes()).unwrap())}
+        Ok(mut resp) => {
+            let content = resp.text_with_charset("utf-8");
+            match content {
+                Err(_) => {(String::from(""), Document::from_read("".as_bytes()).unwrap())}
+                Ok(content) => {
+                     (content.to_string(), Document::from_read(content.as_bytes()).unwrap())
+                }
+            }           
+        }         
     }
 }
 
@@ -110,19 +114,48 @@ fn get_urls_from_doc(doc : select::document::Document) -> Vec<String> {
 #[get("/get_urls/<name>")]
 fn get_urls(name: &RawStr) -> String {
     let name_str = name.as_str();
-    return "URLS are currently empty".to_string();
+    
+    let mut fname = name_str.to_string();
+    fname.push_str(".json");
+    println!("file name {} ", fname);
+    // Deserialize from a file, the format is also inferred from the file extension
+    
+    match serde_any::from_file(fname) {
+        Err(e) => {return e.to_string();}
+        Ok(map) => {
+            let hm_urls_pages : HashMap<String, String> = map;
+            let mut keys = String::new();
+
+            for key in hm_urls_pages.keys() {
+                println!("{}", key);
+                keys.push_str("\n");
+                keys.push_str(key);
+            }
+
+            return keys;
+        }
+    }    
 }
 
-/*
-#[get("/get_url_count/<domain>")]
-fn get_url_count(domain : &RawStr) -> String {
-    //let decoded = domain.url_decode(); 
-    //format!("Domain : , {}", domain.as_str())
-    //format!("Domain : , {}", "Hello World !")
+
+#[get("/get_url_count/<name>")]
+fn get_url_count(name : &RawStr) -> String {
+    let name_str = name.as_str();
     
+    let mut fname = name_str.to_string();
+    fname.push_str(".json");
+    println!("file name {} ", fname);
+    // Deserialize from a file, the format is also inferred from the file extension
+    
+    match serde_any::from_file(fname) {
+        Err(e) => {return e.to_string();}
+        Ok(map) => {
+            let hm_urls_pages : HashMap<String, String> = map;
+            return hm_urls_pages.len().to_string();
+        }    
+    }
 }
-*/
 
 fn main() {
-    rocket::ignite().mount("/spider", routes![crawl, get_urls]).launch();  
+    rocket::ignite().mount("/spider", routes![crawl, get_urls, get_url_count]).launch();  
 }
