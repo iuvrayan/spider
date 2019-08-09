@@ -37,29 +37,34 @@ fn crawl(name : &RawStr) -> String {
     //get the document corresponding to the URL, and store the document against the URL
     let doc = get_doc_from_url(url.to_string());
 
+    //insert the document aginst the url
     hm_urls_pages.insert(url.to_string(), doc.clone());
 
+    //
     let mut vec_urls = get_urls_from_doc(doc.clone());
-    //println!("initial urls {:?} \n", vec_urls); 
-     
-    if vec_urls.len() > 20 {
-        for i in 20..vec_urls.len() {
-            vec_urls.remove(i);
-        }
-    }
-    
+    //println!("initial urls {:?} \n", vec_urls);
 
-    while let Some(top) = vec_urls.pop() {
-        println!("the top url {} \n", top);
-        let mut i = 1;
-        if !hm_urls_pages.contains_key(&top) && i < 2 {
+    if vec_urls.is_empty() {
+        return "No Links found".to_string();
+    }
+
+    let mut cur_url_index = 1;
+    while let Some(top) = vec_urls.get(cur_url_index) {
+        println!("the top url {} \n", *top);        
+        if !hm_urls_pages.contains_key(top) {
             let sub_doc = get_doc_from_url(top.to_string());         
             hm_urls_pages.insert(top.to_string(), sub_doc.clone());
-            i  += 1;
-            println!("url level {}", i);
+            
             let mut vec_sub_urls = get_urls_from_doc(sub_doc.clone());
+
+            if vec_urls.is_empty() {
+                return "No more Links found".to_string();
+            }
+
             vec_urls.append(&mut vec_sub_urls);
+            if vec_urls.len() >= 1000 { break; }
         }
+        cur_url_index += 1;
     }
     
     return "Successfully Crawled!".to_string();
@@ -83,7 +88,17 @@ fn get_urls_from_doc(doc : select::document::Document) -> Vec<String> {
 
     doc.find(Name("a"))
     .filter_map(|n| n.attr("href"))
-    .for_each(|x| if !x.contains("?") && x.contains("//") && !vec_urls.contains(&x.to_string()) {vec_urls.push(x.to_string())});
+    .for_each(|x| 
+        if !x.contains("?") && x.contains("//") {       
+            match std::str::from_utf8(x.as_bytes()) {
+                Err(_) => println!("invalid utf-8 string"),
+                Ok(y) => {
+                    let z = y.to_string();
+                    if !vec_urls.contains(&z) {vec_urls.push(z);}
+                }     
+            }
+        }
+    );
 
     for url in &vec_urls {
         println!("{} \n", url);
