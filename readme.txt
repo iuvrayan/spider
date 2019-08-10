@@ -1,5 +1,13 @@
 The module created for this project is named "spider"
 
+Deploy Docker Image:
+======================
+
+docker run -it -v "<source_dir>":"<destination_dir>" -w <working_dir> --rm rust:latest cargo test
+
+Replace source, destination, working dirs and run the above docker command so that the project is mounted as image
+
+
 Pre-Requisites:
 ===============
 
@@ -10,7 +18,7 @@ To make Rust nightly as the default toolchain run the command: rustup default ni
 Calling the Web Services:
 =========================
 
-Once you run the spider crate, with "cargo run" command, you can start firing the requests from a browser or any other tool.
+Run the spider crate, with "cargo run" command, you can start firing the requests from a browser or any other tool.
 
 There are 3 apis which are exposed as HTTP GET services, for which the documentation can be found in in the spider crate located in the following location.
 
@@ -33,7 +41,3 @@ Unit Tests:
 There are total 7 tests which includes the above services, along with internal functions, each containing around 3 to 4 assertions each.
 
 The tests can be run by the command "cargo test" from the home directory of the module.
-
-
-
-
