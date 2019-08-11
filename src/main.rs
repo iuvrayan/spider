@@ -12,25 +12,22 @@ use select::predicate::Name;
 
 use std::collections::HashMap;
 
-// maximum threshhold number for the urls to crawl
-const LIMIT: usize = 10;
 
 ///
-/// This method takes a domain as input,
-/// extracts the urls from the page and appends to a vector
-/// it also adds the extracted page body into a hashmap against the url
-/// and then recursively it fires requests for all the extracted urls, and gets added to the vector and hashmap
-/// until vector size reaches the LIMIT above, which is currently hardcoded as 10
+/// This method takes a domain as input, extracts the urls from the page and appends to a vector.
+/// It also adds the extracted page body into a hashmap against the url.
+/// 
+/// And then it recursively fires requests for all the extracted urls, until it reaches the LIMIT ,
+/// which can be set in the Config.json.
 ///
-/// duplicate urls are removed at each stage before storing into vec and to ensure uniqueness the extracted page
+/// Duplicate urls are removed at each stage before storing into vec and to ensure uniqueness the extracted page
 /// is stored in a hashmap with key as url and page as the value.
 ///
-/// once the crawling is done, it returns a success message and serialises the extracted pages as json file
+/// Once the crawling is done, it returns a success message and serialises the extracted pages as json file
 /// with the file name as domain name
 ///
-/// to use this method, execute the following url
-///
-/// http://localhost:8000/spider/crawl/<domain>
+/// The GET method signature for this web service is : http://<ip address>:8000/spider/crawl/<domain>
+/// 
 ///
 #[get("/crawl/<name>")]
 fn crawl(name: &RawStr) -> String {
@@ -40,6 +37,20 @@ fn crawl(name: &RawStr) -> String {
         Err(e) => return e,
         Ok(v) => url = v,
     }
+
+    // maximum threshhold number for the urls to crawl
+    let mut limit = 10;
+    match serde_any::from_file("Config.json") {
+        Err(_) => { 
+            println!("Error reading url limit value. defualting to 10");
+        }
+        Ok(m) => {
+            let map: HashMap<String, String> = m;           
+            limit = usize::from_str_radix(map.get("LIMIT").unwrap().trim(), 10).unwrap();
+        }
+    }
+
+    println!("crawl limit : {}", limit);
 
     //create HashMap to hold all the URLs, and the correcsponding pages for this domain
     let mut hm_urls_pages = HashMap::new();
@@ -73,7 +84,7 @@ fn crawl(name: &RawStr) -> String {
 
             vec_urls.append(&mut vec_sub_urls);
 
-            if vec_urls.len() >= LIMIT {
+            if vec_urls.len() >= limit {
                 break;
             }
         }
@@ -94,12 +105,10 @@ fn crawl(name: &RawStr) -> String {
 
 ///
 /// This method tries to deserialise the stored file with the domain name and return all the urls contained in the
-/// hashmap.
-/// if it can't find the serialied json file, it returns error message.
+/// hashmap. If it can't find the serialied json file, it returns error message.
 ///
-/// to use this method, execute the following url
-///
-/// http://localhost:8000/spider/get_urls/<domain>
+/// The GET method signature for this web service is : http://<ip address>:8000/spider/get_urls/<domain>
+/// 
 ///
 #[get("/get_urls/<name>")]
 fn get_urls(name: &RawStr) -> String {
@@ -134,11 +143,10 @@ fn get_urls(name: &RawStr) -> String {
 }
 
 ///
-/// This method works same as the get_urls method, except it just returns the url count as string when success.
+/// This method works the same way as the get_urls method, 
+/// except it returns the url count as string in case of success.
 /// 
-/// to use this method, execute the following url
-///
-/// http://localhost:8000/spider/get_url_count/<domain>
+/// The GET method signature for this web service is : http://<ip address>:8000/spider/get_url_count/<domain>
 ///
 #[get("/get_url_count/<name>")]
 fn get_url_count(name: &RawStr) -> String {
@@ -184,9 +192,10 @@ fn convert_domain_to_url(domain: String) -> Result<String, String> {
 ///
 /// This method takes a url as input and fires the http get request.
 /// Reads the response and converts the body text to Document object with nodes.
-/// The method returns both the plain body text and DOM object document so, that
-/// the plain text can be stored for serialisation, the document will be used to extract the urls further
+/// The method returns both the plain body text and the DOM object document so that,
+/// the plain text can be stored for serialisation, and the document will be used to extract the urls further.
 ///
+/// 
 fn get_doc_from_url(url: String) -> (String, select::document::Document) {
     //Make the GET request and return the body as text and Document
     println!("running url : {}\n", url);
@@ -214,7 +223,7 @@ fn get_doc_from_url(url: String) -> (String, select::document::Document) {
 
 ///
 /// This method extracts the urls present in the document and returns them as a vector.
-/// It does basic validations like it takes only plain urls without any query strings.
+/// It does basic validations and takes only the plain urls without any query strings.
 /// Also this method ensures that the same url is not extracted twice, and does the checking
 /// before pushing the url into the vector.
 ///
@@ -248,7 +257,7 @@ fn get_urls_from_doc(doc: select::document::Document) -> Vec<String> {
 }
 
 //The main function
-fn main() {
+fn main() {    
     rocket::ignite()
         .mount("/spider", routes![crawl, get_urls, get_url_count])
         .launch();
