@@ -22,7 +22,7 @@ Open another power shell and execute the following command to get the ip address
 
 docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <container-id>
 
-In the container tty, type the following command to create Rocket.toml file by replacing the ip-address obtained above.
+In the container tty, type the following command to create Rocket.toml file by replacing the <ip-address> obtained above.
 
 echo \"[development] \n address = \"<ip address>\" > Rocket.toml
 
