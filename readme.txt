@@ -22,9 +22,9 @@ Open another power shell and execute the following command to get the ip address
 
 docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' spider_container
 
-In the container tty, type the following command to create Rocket.toml file by replacing the <ip-address> obtained above.
+In the container tty, type the following command to create Rocket.toml file, by replacing the localhost with the ip address received above.
 
-echo \"[development] \n address = \"<ip address>\" > Rocket.toml
+echo -e "[development]\naddress = \"localhost\"" > Rocket.toml
 
 Run the command "cargo run", which will start the web server.
 
