@@ -20,7 +20,7 @@ Once the docker image is created, run the command "docker run -it --name spider_
 
 Open another power shell and execute the following command to get the ip address of the running container.
 
-docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <container-id>
+docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' spider_container
 
 In the container tty, type the following command to create Rocket.toml file by replacing the <ip-address> obtained above.
 
@@ -59,14 +59,11 @@ Running Unit Tests:
 ===================
 There are total 7 tests which includes the above services, along with internal functions, each containing around 3 to 4 assertions each.
 
-The tests can be run by the command "cargo test" at the interactive tty.
-
-
-Generate Documenation:
-======================
 run the command "cargo doc" at the interactive container tty.
 
 After which the documentation can be found in in the spider crate located in the following location, /spider/target/doc/spider/index.html
 
 
                                                                    *==END==*
+=======
+The tests can be run by the command "cargo test" from the home directory of the module.
