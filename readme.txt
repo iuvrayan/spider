@@ -28,6 +28,20 @@ echo -e "[development]\naddress = \"localhost\"" > Rocket.toml
 
 Run the command "cargo run", which will start the web server.
 
+Running Unit Tests:
+===================
+There are total 7 tests which includes the above services, along with internal functions, each containing around 3 to 4 assertions each.
+
+The tests can be run by the command "cargo test" at the interactive tty.
+
+
+Generate Documenation:
+======================
+run the command "cargo doc" at the interactive container tty.
+
+After which the documentation can be found in in the spider crate located in the following location, /spider/target/doc/spider/index.html
+
+
 
 Calling the Web Services:
 =========================
@@ -55,15 +69,4 @@ Get URL Count Web Service: http://<host_ip>:8000/spider/get_url_count/<domain>
 For example : http://172.18.77.146:8000/spider/get_url_count/petapixel.com
 
 
-Running Unit Tests:
-===================
-There are total 7 tests which includes the above services, along with internal functions, each containing around 3 to 4 assertions each.
-
-run the command "cargo doc" at the interactive container tty.
-
-After which the documentation can be found in in the spider crate located in the following location, /spider/target/doc/spider/index.html
-
-
                                                                    *==END==*
-=======
-The tests can be run by the command "cargo test" from the home directory of the module.
