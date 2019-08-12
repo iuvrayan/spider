@@ -9,6 +9,8 @@ OS : Windows 10 Pro
 
 Docker Desktop must be up and running.
 
+Make sure that Docker Desktop is in the Windows Container mode
+
 
 Deploying & Running Docker Image:
 =================================
