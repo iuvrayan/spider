@@ -44,17 +44,18 @@ fn crawl(name: &RawStr) -> String {
 
     // maximum threshhold number for the urls to crawl
     let mut limit = 10;
+
     match serde_any::from_file("Config.json") {
         Err(_) => {
             println!("Error reading url limit value. defualting to 10");
         }
-        Ok(m) => {
+        Ok(m) => {           
             let map: HashMap<String, String> = m;
             limit = usize::from_str_radix(map.get("LIMIT").unwrap().trim(), 10).unwrap();
         }
     }
 
-    println!("crawl limit : {}", limit);    
+    println!("crawl limit : {}", limit);
 
     //Create the vector and push the domain url as the intial url into the vec
     let urls = Arc::new(Mutex::new(vec![url]));
@@ -67,28 +68,22 @@ fn crawl(name: &RawStr) -> String {
 
     //Async with Channels. Create Sender and Receiver
     let (tx, rx) = mpsc::channel();
-    
     while urls.clone().lock().unwrap().len() < limit {
         let _tx = tx.clone();
 
         //get next url to be crawled
-        let next_url = urls
-                .lock()
-                .unwrap()
-                .get(cur_url_index)
-                .unwrap()
-                .to_string();
+        let next_url = urls.lock().unwrap().get(cur_url_index).unwrap().to_string();
 
         thread::spawn(move || {
-            println!("Spawning thread {}", cur_url_index);                       
+            println!("Spawning thread {}", cur_url_index);
 
             //get the page body as text and dom and store
             let (body, doc) = get_doc_from_url(next_url.to_string());
 
             //get the sub urls from the DOM object
             let sub_urls = get_urls_from_doc(doc);
-           
-           //send the values to the receiver of the channel to process further
+
+            //send the values to the receiver of the channel to process further
             _tx.send((next_url, body, sub_urls)).unwrap();
         });
 
@@ -98,10 +93,10 @@ fn crawl(name: &RawStr) -> String {
         //insert the url and page that was just retrned by the sender thread
         urls_and_pages.lock().unwrap().insert(url, body);
 
-        //for the sub urls received from the thread, 
+        //for the sub urls received from the thread,
         //if the url is not present in the urls vector,
         //process them and add to hash map and vector
-        for sub_url in sub_urls  {
+        for sub_url in sub_urls {
             if !urls.lock().unwrap().contains(&sub_url) {
                 let (body, _doc) = get_doc_from_url(sub_url.to_string());
                 urls_and_pages.lock().unwrap().insert(sub_url.clone(), body);
@@ -111,8 +106,11 @@ fn crawl(name: &RawStr) -> String {
 
         cur_url_index += 1;
     }
-    
-    println!("total url hash pages count {} : ", urls_and_pages.lock().unwrap().len());
+
+    println!(
+        "total url hash pages count {} : ",
+        urls_and_pages.lock().unwrap().len()
+    );
 
     //create the file name
     let mut fname = name.to_string();
