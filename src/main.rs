@@ -95,20 +95,16 @@ fn crawl(name: &RawStr) -> String {
 
             t_hm_urls_pages.lock().unwrap().insert(top.to_string(), body);
 
-            let vec_sub_urls = get_urls_from_doc(doc);
-            t_tx.send(vec_sub_urls);
-        });
+            let mut vec_sub_urls = get_urls_from_doc(doc);
+            t_vec_urls.lock().unwrap().append(&mut vec_sub_urls);
+            t_tx.send(()).unwrap();
+        });       
+    
+        rx.recv().unwrap();
 
-        match rx.recv() {
-            Ok(mut sub_urls) => {
-                vec_urls.clone().lock().unwrap().append(&mut sub_urls);
-            }
-            Err(e) => println!("{}", e)
-        }        
-        
-        cur_url_index += 1;
-        //println!("cur_url_index : {}, vec_urls len : {}", cur_url_index, vec_urls.lock().unwrap().len());
-    }
+        cur_url_index += 1;       
+    }  
+    
 
     /*
     //actual code
