@@ -54,91 +54,72 @@ fn crawl(name: &RawStr) -> String {
         }
     }
 
-    println!("crawl limit : {}", limit);
+    println!("crawl limit : {}", limit);    
+
+    //Create the vector and push the domain url as the intial url into the vec
+    let urls = Arc::new(Mutex::new(vec![url]));
 
     //create HashMap to hold all the URLs, and the correcsponding pages for this domain
-    //let mut hm_urls_pages = HashMap::new();
-    let hm_urls_pages = Arc::new(Mutex::new(HashMap::new()));
+    let urls_and_pages = Arc::new(Mutex::new(HashMap::new()));
 
-    //push the domain url as the intial url into the vec
-    //let mut vec_urls: Vec<String>;
-    let vec_urls = Arc::new(Mutex::new(vec![url]));
-    
     //index of the next url to crawl
-    //let data_cur_url_index :usize = 0;
     let mut cur_url_index = 0;
 
-    //Async with Channels
+    //Async with Channels. Create Sender and Receiver
     let (tx, rx) = mpsc::channel();
+    
+    while urls.clone().lock().unwrap().len() < limit {
+        let _tx = tx.clone();
 
-    while  vec_urls.clone().lock().unwrap().len() < limit {
-        
-        let (t_hm_urls_pages, t_vec_urls, t_tx) = (
-            hm_urls_pages.clone(),  vec_urls.clone(),                   
-            tx.clone()
-        );        
-        
-        thread::spawn(move || {
-            println!("spawning thread {}", cur_url_index);
-
-            let top = t_vec_urls
+        //get next url to be crawled
+        let next_url = urls
                 .lock()
                 .unwrap()
                 .get(cur_url_index)
                 .unwrap()
                 .to_string();
 
-            println!("url {} \n", top);
+        thread::spawn(move || {
+            println!("Spawning thread {}", cur_url_index);                       
 
             //get the page body as text and dom and store
-            let (body, doc) = get_doc_from_url(top.to_string());
+            let (body, doc) = get_doc_from_url(next_url.to_string());
 
-            t_hm_urls_pages.lock().unwrap().insert(top.to_string(), body);
+            //get the sub urls from the DOM object
+            let sub_urls = get_urls_from_doc(doc);
+           
+           //send the values to the receiver of the channel to process further
+            _tx.send((next_url, body, sub_urls)).unwrap();
+        });
 
-            let mut vec_sub_urls = get_urls_from_doc(doc);
-            t_vec_urls.lock().unwrap().append(&mut vec_sub_urls);
-            t_tx.send(()).unwrap();
-        });       
-    
-        rx.recv().unwrap();
+        //Receive the values from the channel
+        let (url, body, sub_urls) = rx.recv().unwrap();
 
-        cur_url_index += 1;       
-    }  
-    
+        //insert the url and page that was just retrned by the sender thread
+        urls_and_pages.lock().unwrap().insert(url, body);
 
-    /*
-    //actual code
-    while cur_url_index < vec_urls.len() {
-        let Some(top) = vec_urls.get(cur_url_index);
-        println!("url {} \n", top);
-
-        //get the page body as text and dom and store
-        let (body, doc) = get_doc_from_url(top.to_string());
-        hm_urls_pages.insert(top.to_string(), body);
-
-        if vec_urls.len() < limit {
-            //get all the urls in this page and store in a vec
-            let mut vec_sub_urls = get_urls_from_doc(doc);
-
-            if !vec_sub_urls.is_empty() {
-                vec_urls.append(&mut vec_sub_urls);
+        //for the sub urls received from the thread, 
+        //if the url is not present in the urls vector,
+        //process them and add to hash map and vector
+        for sub_url in sub_urls  {
+            if !urls.lock().unwrap().contains(&sub_url) {
+                let (body, _doc) = get_doc_from_url(sub_url.to_string());
+                urls_and_pages.lock().unwrap().insert(sub_url.clone(), body);
+                urls.lock().unwrap().push(sub_url);
             }
         }
+
         cur_url_index += 1;
     }
-    */
-
-    println!(
-        "URL Count from Crawl : {}",
-        hm_urls_pages.lock().unwrap().len()
-    );
+    
+    println!("total url hash pages count {} : ", urls_and_pages.lock().unwrap().len());
 
     //create the file name
     let mut fname = name.to_string();
     fname.push_str(".json");
 
     //serialize the crawled pages and urls to a json file
-    let url_links_pages = hm_urls_pages.lock().unwrap();
+    let url_links_pages = urls_and_pages.lock().unwrap();
     serde_any::to_file(fname, &*url_links_pages).unwrap();
 
     return "Successfully Crawled!".to_string();
@@ -166,13 +147,13 @@ fn get_urls(name: &RawStr) -> String {
             return e.to_string();
         }
         Ok(map) => {
-            let hm_urls_pages: HashMap<String, String> = map;
+            let urls_and_pages: HashMap<String, String> = map;
 
-            println!("URL Count from get_urls : {}", hm_urls_pages.len());
+            println!("URL Count from get_urls : {}", urls_and_pages.len());
 
             let mut keys = String::new();
 
-            for key in hm_urls_pages.keys() {
+            for key in urls_and_pages.keys() {
                 println!("{}", key);
                 keys.push_str("\n");
                 keys.push_str(key);
@@ -204,9 +185,9 @@ fn get_url_count(name: &RawStr) -> String {
             return e.to_string();
         }
         Ok(map) => {
-            let hm_urls_pages: HashMap<String, String> = map;
-            println!("URL Count from get_urls : {}", hm_urls_pages.len());
-            return hm_urls_pages.len().to_string();
+            let urls_and_pages: HashMap<String, String> = map;
+            println!("URL Count from get_urls : {}", urls_and_pages.len());
+            return urls_and_pages.len().to_string();
         }
     }
 }
@@ -271,7 +252,7 @@ fn get_doc_from_url(url: String) -> (String, select::document::Document) {
 ///
 fn get_urls_from_doc(doc: select::document::Document) -> Vec<String> {
     //Store URLs in the Vector
-    let mut vec_urls: Vec<String> = Vec::new();
+    let mut urls: Vec<String> = Vec::new();
 
     //Find the links
     doc.find(Name("a"))
@@ -282,19 +263,19 @@ fn get_urls_from_doc(doc: select::document::Document) -> Vec<String> {
                     Err(_) => println!("invalid utf-8 string"),
                     Ok(y) => {
                         let z = y.to_string();
-                        if !vec_urls.contains(&z) {
-                            vec_urls.push(z);
+                        if !urls.contains(&z) {
+                            urls.push(z);
                         }
                     }
                 }
             }
         });
 
-    for url in &vec_urls {
+    for url in &urls {
         println!("{} \n", url);
     }
 
-    return vec_urls;
+    return urls;
 }
 
 //The main function
