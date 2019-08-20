@@ -12,11 +12,14 @@ use select::predicate::Name;
 
 use std::collections::HashMap;
 
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 ///
 /// This method takes a domain as input, extracts the urls from the page and appends to a vector.
 /// It also adds the extracted page body into a hashmap against the url.
-/// 
+///
 /// And then it recursively fires requests for all the extracted urls, until it reaches the LIMIT ,
 /// which can be set in the Config.json.
 ///
@@ -27,12 +30,13 @@ use std::collections::HashMap;
 /// with the file name as domain name
 ///
 /// The GET method signature for this web service is : http://<ip address>:8000/spider/crawl/<domain>
-/// 
+///
 ///
 #[get("/crawl/<name>")]
 fn crawl(name: &RawStr) -> String {
     //convert domain to url
     let url;
+
     match convert_domain_to_url(name.to_string()) {
         Err(e) => return e,
         Ok(v) => url = v,
@@ -41,11 +45,11 @@ fn crawl(name: &RawStr) -> String {
     // maximum threshhold number for the urls to crawl
     let mut limit = 10;
     match serde_any::from_file("Config.json") {
-        Err(_) => { 
+        Err(_) => {
             println!("Error reading url limit value. defualting to 10");
         }
         Ok(m) => {
-            let map: HashMap<String, String> = m;           
+            let map: HashMap<String, String> = m;
             limit = usize::from_str_radix(map.get("LIMIT").unwrap().trim(), 10).unwrap();
         }
     }
@@ -53,52 +57,93 @@ fn crawl(name: &RawStr) -> String {
     println!("crawl limit : {}", limit);
 
     //create HashMap to hold all the URLs, and the correcsponding pages for this domain
-    let mut hm_urls_pages = HashMap::new();
+    //let mut hm_urls_pages = HashMap::new();
+    let hm_urls_pages = Arc::new(Mutex::new(HashMap::new()));
 
     //push the domain url as the intial url into the vec
-    let mut vec_urls: Vec<String> = Vec::new();
-    vec_urls.push(url);
-
+    //let mut vec_urls: Vec<String>;
+    let vec_urls = Arc::new(Mutex::new(vec![url]));
+    
     //index of the next url to crawl
+    //let data_cur_url_index :usize = 0;
     let mut cur_url_index = 0;
 
-    while let Some(top) = vec_urls.get(cur_url_index) {
-        println!("url {} \n", top);
+    //Async with Channels
+    let (tx, rx) = mpsc::channel();
 
-        if !hm_urls_pages.contains_key(top) {
+    while  vec_urls.clone().lock().unwrap().len() < limit {
+        
+        let (t_hm_urls_pages, t_vec_urls, t_tx) = (
+            hm_urls_pages.clone(),  vec_urls.clone(),                   
+            tx.clone()
+        );        
+        
+        thread::spawn(move || {
+            println!("spawning thread {}", cur_url_index);
+
+            let top = t_vec_urls
+                .lock()
+                .unwrap()
+                .get(cur_url_index)
+                .unwrap()
+                .to_string();
+
+            println!("url {} \n", top);
+
             //get the page body as text and dom and store
             let (body, doc) = get_doc_from_url(top.to_string());
-            hm_urls_pages.insert(top.to_string(), body);
 
+            t_hm_urls_pages.lock().unwrap().insert(top.to_string(), body);
+
+            let vec_sub_urls = get_urls_from_doc(doc);
+            t_tx.send(vec_sub_urls);
+        });
+
+        match rx.recv() {
+            Ok(mut sub_urls) => {
+                vec_urls.clone().lock().unwrap().append(&mut sub_urls);
+            }
+            Err(e) => println!("{}", e)
+        }        
+        
+        cur_url_index += 1;
+        //println!("cur_url_index : {}, vec_urls len : {}", cur_url_index, vec_urls.lock().unwrap().len());
+    }
+
+    /*
+    //actual code
+    while cur_url_index < vec_urls.len() {
+        let Some(top) = vec_urls.get(cur_url_index);
+        println!("url {} \n", top);
+
+        //get the page body as text and dom and store
+        let (body, doc) = get_doc_from_url(top.to_string());
+        hm_urls_pages.insert(top.to_string(), body);
+
+        if vec_urls.len() < limit {
             //get all the urls in this page and store in a vec
             let mut vec_sub_urls = get_urls_from_doc(doc);
 
-            //insert all these keys into the hashmap with empty body
-            for url in &vec_sub_urls {
-                hm_urls_pages.insert(url.to_string(), "".to_string());
-            }
-
-            if vec_urls.is_empty() {
-                return "No more Links found".to_string();
-            }
-
-            vec_urls.append(&mut vec_sub_urls);
-
-            if vec_urls.len() >= limit {
-                break;
+            if !vec_sub_urls.is_empty() {
+                vec_urls.append(&mut vec_sub_urls);
             }
         }
         cur_url_index += 1;
     }
+    */
 
-    println!("URL Count from Crawl : {}", hm_urls_pages.len());
+    println!(
+        "URL Count from Crawl : {}",
+        hm_urls_pages.lock().unwrap().len()
+    );
 
     //create the file name
     let mut fname = name.to_string();
     fname.push_str(".json");
 
     //serialize the crawled pages and urls to a json file
-    serde_any::to_file(fname, &hm_urls_pages).unwrap();
+    let url_links_pages = hm_urls_pages.lock().unwrap();
+    serde_any::to_file(fname, &*url_links_pages).unwrap();
 
     return "Successfully Crawled!".to_string();
 }
@@ -108,14 +153,14 @@ fn crawl(name: &RawStr) -> String {
 /// hashmap. If it can't find the serialied json file, it returns error message.
 ///
 /// The GET method signature for this web service is : http://<ip address>:8000/spider/get_urls/<domain>
-/// 
+///
 ///
 #[get("/get_urls/<name>")]
 fn get_urls(name: &RawStr) -> String {
     //create the file name from domain
     let name_str = name.as_str();
     let mut fname = name_str.to_string();
-    fname.push_str(".json");    
+    fname.push_str(".json");
 
     println!("file name {} ", fname);
 
@@ -143,9 +188,9 @@ fn get_urls(name: &RawStr) -> String {
 }
 
 ///
-/// This method works the same way as the get_urls method, 
+/// This method works the same way as the get_urls method,
 /// except it returns the url count as string in case of success.
-/// 
+///
 /// The GET method signature for this web service is : http://<ip address>:8000/spider/get_url_count/<domain>
 ///
 #[get("/get_url_count/<name>")]
@@ -195,7 +240,7 @@ fn convert_domain_to_url(domain: String) -> Result<String, String> {
 /// The method returns both the plain body text and the DOM object document so that,
 /// the plain text can be stored for serialisation, and the document will be used to extract the urls further.
 ///
-/// 
+///
 fn get_doc_from_url(url: String) -> (String, select::document::Document) {
     //Make the GET request and return the body as text and Document
     println!("running url : {}\n", url);
@@ -257,15 +302,13 @@ fn get_urls_from_doc(doc: select::document::Document) -> Vec<String> {
 }
 
 //The main function
-fn main() {    
+fn main() {
     rocket::ignite()
         .mount("/spider", routes![crawl, get_urls, get_url_count])
         .launch();
 }
 
-
 //=================================================================================================
-
 
 #[cfg(test)]
 mod tests {
@@ -358,7 +401,7 @@ mod tests {
     ///
     #[test]
     fn test_crawl() {
-        let resp = crawl(RawStr::from_str("petapixel.com"));            
+        let resp = crawl(RawStr::from_str("petapixel.com"));
         assert_eq!(resp, "Successfully Crawled!");
 
         // Tehcnically valid domain name, but non existing
@@ -370,48 +413,53 @@ mod tests {
         assert_eq!(resp3, "Invalid Domain Name!");
     }
 
-
     ///
     ///  If the json file corresponding to the domain is the present in the home directory the tests give succes,
     ///  otherwise they will fail.
-    /// 
+    ///
     /// Before executing MAKE SURE that the files "petapixel.com.json", "sdlkjfslf.efh.json" are present.
     ///    
-    
+
     #[test]
     fn test_get_urls() {
         //This test gives valid urls as respose string. It can be verified manually that they are all unique.
-        let body = get_urls(RawStr::from_str("petapixel.com"));            
+        let body = get_urls(RawStr::from_str("petapixel.com"));
         assert_ne!(body, "");
-        
+
         // Tehcnically valid domain name crawled before, so it retuns the domain as url which is stored in json
-        let body2 = get_urls(RawStr::from_str("nonexistingdomain.abc"));            
+        let body2 = get_urls(RawStr::from_str("nonexistingdomain.abc"));
         assert_eq!(body2.trim(), "http://www.nonexistingdomain.abc");
 
         // Invalid domain name throws error
         let body3 = get_urls(RawStr::from_str("invalid_domain"));
-        assert_eq!(body3, "IO error: The system cannot find the file specified. (os error 2)");      
+        assert_eq!(
+            body3,
+            "IO error: The system cannot find the file specified. (os error 2)"
+        );
     }
 
     ///
     ///  If the json file corresponding to the domain is the present in the home directory the tests give succes,
     ///  otherwise they will fail.
-    /// 
+    ///
     /// Before executing MAKE SURE that the files "petapixel.com.json", "sdlkjfslf.efh.json" are present.
     ///    
-    
+
     #[test]
     fn test_get_url_count() {
         //This the count of urls as string for the crawled domain.
-        let count = get_url_count(RawStr::from_str("petapixel.com"));        
-        assert_eq!(usize::from_str_radix(count.trim(), 10).unwrap(), 74);        
-        
+        let count = get_url_count(RawStr::from_str("petapixel.com"));
+        assert_eq!(usize::from_str_radix(count.trim(), 10).unwrap(), 74);
+
         // Tehcnically valid domain name crawled, so it retuns the domain as url which is stored in json
-        let count2 = get_url_count(RawStr::from_str("nonexistingdomain.abc"));            
+        let count2 = get_url_count(RawStr::from_str("nonexistingdomain.abc"));
         assert_eq!(usize::from_str_radix(count2.trim(), 10).unwrap(), 1);
 
         // Invalid domain name
         let count3 = get_url_count(RawStr::from_str("invalid_domain"));
-        assert_eq!(count3, "IO error: The system cannot find the file specified. (os error 2)");      
+        assert_eq!(
+            count3,
+            "IO error: The system cannot find the file specified. (os error 2)"
+        );
     }
 }
