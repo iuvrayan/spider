@@ -5,6 +5,14 @@ extern crate rocket;
 extern crate reqwest;
 extern crate select;
 
+extern crate addr;
+extern crate dns_lookup;
+
+extern crate log;
+extern crate env_logger;
+
+use regex::Regex;
+
 use rocket::http::RawStr;
 
 use select::document::Document;
@@ -15,6 +23,11 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use log::{error, info};
+
+
+use dns_lookup::{lookup_host, lookup_addr};
+use std::net::IpAddr;
 
 ///
 /// This method takes a domain as input, extracts the urls from the page and appends to a vector.
@@ -34,6 +47,7 @@ use std::thread;
 ///
 #[get("/crawl/<name>")]
 fn crawl(name: &RawStr) -> String {
+    info!("Entered crawl method");
     //convert domain to url
     let url;
 
@@ -44,17 +58,18 @@ fn crawl(name: &RawStr) -> String {
 
     // maximum threshhold number for the urls to crawl
     let mut limit = 10;
+
     match serde_any::from_file("Config.json") {
         Err(_) => {
-            println!("Error reading url limit value. defualting to 10");
+            error!("Error reading url limit value. defualting to 10");
         }
-        Ok(m) => {
+        Ok(m) => {           
             let map: HashMap<String, String> = m;
-            limit = usize::from_str_radix(map.get("LIMIT").unwrap().trim(), 10).unwrap();
+            limit = map.get("LIMIT").unwrap().parse().unwrap();
         }
     }
 
-    println!("crawl limit : {}", limit);    
+    info!("crawl limit : {}", limit);
 
     //Create the vector and push the domain url as the intial url into the vec
     let urls = Arc::new(Mutex::new(vec![url]));
@@ -67,28 +82,22 @@ fn crawl(name: &RawStr) -> String {
 
     //Async with Channels. Create Sender and Receiver
     let (tx, rx) = mpsc::channel();
-    
     while urls.clone().lock().unwrap().len() < limit {
         let _tx = tx.clone();
 
         //get next url to be crawled
-        let next_url = urls
-                .lock()
-                .unwrap()
-                .get(cur_url_index)
-                .unwrap()
-                .to_string();
+        let next_url = urls.lock().unwrap().get(cur_url_index).unwrap().to_string();
 
         thread::spawn(move || {
-            println!("Spawning thread {}", cur_url_index);                       
+            info!("Spawning thread {}", cur_url_index);
 
             //get the page body as text and dom and store
             let (body, doc) = get_doc_from_url(next_url.to_string());
 
             //get the sub urls from the DOM object
             let sub_urls = get_urls_from_doc(doc);
-           
-           //send the values to the receiver of the channel to process further
+
+            //send the values to the receiver of the channel to process further
             _tx.send((next_url, body, sub_urls)).unwrap();
         });
 
@@ -98,12 +107,12 @@ fn crawl(name: &RawStr) -> String {
         //insert the url and page that was just retrned by the sender thread
         urls_and_pages.lock().unwrap().insert(url, body);
 
-        //for the sub urls received from the thread, 
+        //for the sub urls received from the thread,
         //if the url is not present in the urls vector,
         //process them and add to hash map and vector
-        for sub_url in sub_urls  {
+        for sub_url in sub_urls {
             if !urls.lock().unwrap().contains(&sub_url) {
-                let (body, _doc) = get_doc_from_url(sub_url.to_string());
+                let (body, _) = get_doc_from_url(sub_url.to_string());
                 urls_and_pages.lock().unwrap().insert(sub_url.clone(), body);
                 urls.lock().unwrap().push(sub_url);
             }
@@ -111,8 +120,11 @@ fn crawl(name: &RawStr) -> String {
 
         cur_url_index += 1;
     }
-    
-    println!("total url hash pages count {} : ", urls_and_pages.lock().unwrap().len());
+
+    info!(
+        "total url hash pages count {} : ",
+        urls_and_pages.lock().unwrap().len()
+    );
 
     //create the file name
     let mut fname = name.to_string();
@@ -134,12 +146,13 @@ fn crawl(name: &RawStr) -> String {
 ///
 #[get("/get_urls/<name>")]
 fn get_urls(name: &RawStr) -> String {
+    info!("Entered get_urls method");
     //create the file name from domain
     let name_str = name.as_str();
     let mut fname = name_str.to_string();
     fname.push_str(".json");
 
-    println!("file name {} ", fname);
+    info!("file name {} ", fname);
 
     //deserialize the file and get keys which are urls
     match serde_any::from_file(fname) {
@@ -149,12 +162,12 @@ fn get_urls(name: &RawStr) -> String {
         Ok(map) => {
             let urls_and_pages: HashMap<String, String> = map;
 
-            println!("URL Count from get_urls : {}", urls_and_pages.len());
+            info!("URL Count from get_urls : {}", urls_and_pages.len());
 
             let mut keys = String::new();
 
             for key in urls_and_pages.keys() {
-                println!("{}", key);
+                info!("{}", key);
                 keys.push_str("\n");
                 keys.push_str(key);
             }
@@ -172,12 +185,13 @@ fn get_urls(name: &RawStr) -> String {
 ///
 #[get("/get_url_count/<name>")]
 fn get_url_count(name: &RawStr) -> String {
+    info!("Entered get_url_count method");
     //create the file name from domain
     let name_str = name.as_str();
     let mut fname = name_str.to_string();
     fname.push_str(".json");
 
-    println!("file name {} ", fname);
+    info!("file name {} ", fname);
 
     //deserialize the file and get key count of urls
     match serde_any::from_file(fname) {
@@ -186,30 +200,57 @@ fn get_url_count(name: &RawStr) -> String {
         }
         Ok(map) => {
             let urls_and_pages: HashMap<String, String> = map;
-            println!("URL Count from get_urls : {}", urls_and_pages.len());
+            info!("URL Count from get_urls : {}", urls_and_pages.len());
             return urls_and_pages.len().to_string();
         }
     }
 }
 
 ///
-/// This method takes a domain as input, converts in into url by appending http://www.
+/// This method takes a domain as input, converts in into url by prefixing the domain name with http://
 /// It also does basic validation of the domain address format.
 ///
 fn convert_domain_to_url(domain: String) -> Result<String, String> {
-    //Validate the domain name
-    if domain.is_empty() {
-        Err("Empty Domain Name!".to_string())
-    } else if !domain.contains(".") {
-        Err("Invalid Domain Name!".to_string())
-    } else if domain.ends_with(".") {
-        Err("Invalid Domain Name!".to_string())
-    } else {
-        let mut url = String::from("http://www.");
-        url.push_str(&domain);
-        Ok(url)
-    }
+    //Domain Name validation
+    //Composed of a series of labels concatenated with dots.    
+    //Labels contain ASCII letters a-z and A-Z, the digits 0-9, and the hyphen ('-').
+    //Labels cannot start or end with hyphens
+    //Labels can start with numbers
+    //Trailing dot is not allowed
+    info!("Entered convert_domain_to_url method");
+    info!("Input domain string : {}", domain);
+
+    match Regex::new("^([a-z0-9]+(-[a-z0-9]+)*\\.)+[a-z]{2,}$") {
+        Err(_) => Err("Cannot compile Regex".to_string()),
+        Ok(re) => {
+            if !re.is_match(&domain) {
+                return Err("Invalid Domain Name - Cannot be parsed".to_string());
+            }
+            //passing domain as second param to return after match
+            match (lookup_host(&domain), domain) {
+                (Err(_), _) => Err("Parsable Domain Name - But Cannot resolve to valid IP address".to_string()),
+                (Ok(ips), domain) => {
+                    if ips.is_empty() {
+                        return Err("Parsable Domain Name - But Cannot resolve to valid IP address".to_string());
+                    }
+                    let ip =  &ips.get(0).unwrap();    
+                    info!("Domain mapped to IP Addr : {}", ip);
+                    match lookup_addr(ip) {
+                        Err(_) => Err("Couldn't convert Ip to Hostname".to_string()),
+                        Ok(host) => {
+                            info!("IP to Host conversion  : {}", host);
+                            let mut url = String::from("http://");
+                            url.push_str(&domain);
+                            Ok(url)
+                        }
+                    }
+                }
+            }
+        } 
+    }  
 }
+
+    
 
 ///
 /// This method takes a url as input and fires the http get request.
@@ -219,8 +260,9 @@ fn convert_domain_to_url(domain: String) -> Result<String, String> {
 ///
 ///
 fn get_doc_from_url(url: String) -> (String, select::document::Document) {
+    info!("Entered get_doc_from_url method");
     //Make the GET request and return the body as text and Document
-    println!("running url : {}\n", url);
+    info!("running url : {}\n", url);
     let resp = reqwest::get(&url);
     match resp {
         Err(_) => (
@@ -234,10 +276,10 @@ fn get_doc_from_url(url: String) -> (String, select::document::Document) {
                     String::from(""),
                     Document::from_read("".as_bytes()).unwrap(),
                 ),
-                Ok(content) => (
+                Ok(content) => (                    
                     content.to_string(),
                     Document::from_read(content.as_bytes()).unwrap(),
-                ),
+                ),             
             }
         }
     }
@@ -251,28 +293,29 @@ fn get_doc_from_url(url: String) -> (String, select::document::Document) {
 ///
 ///
 fn get_urls_from_doc(doc: select::document::Document) -> Vec<String> {
+    info!("Entered get_urls_from_doc method");
     //Store URLs in the Vector
     let mut urls: Vec<String> = Vec::new();
 
     //Find the links
     doc.find(Name("a"))
-        .filter_map(|n| n.attr("href"))
-        .for_each(|x| {
-            if !x.contains("?") && x.contains("//") {
-                match std::str::from_utf8(x.as_bytes()) {
-                    Err(_) => println!("invalid utf-8 string"),
-                    Ok(y) => {
-                        let z = y.to_string();
-                        if !urls.contains(&z) {
-                            urls.push(z);
-                        }
+    .filter_map(|n| n.attr("href"))
+    .for_each(|x| {
+        if !x.contains("?") && x.contains("//") {
+            match std::str::from_utf8(x.as_bytes()) {
+                Err(_) => error!("invalid utf-8 string"),
+                Ok(y) => {
+                    let z = y.to_string();
+                    if !urls.contains(&z) {
+                        urls.push(z);
                     }
                 }
             }
-        });
+        }
+    });
 
     for url in &urls {
-        println!("{} \n", url);
+        info!("url vec : {} \n", url);
     }
 
     return urls;
@@ -280,6 +323,8 @@ fn get_urls_from_doc(doc: select::document::Document) -> Vec<String> {
 
 //The main function
 fn main() {
+    env_logger::init();
+    info!("in main");
     rocket::ignite()
         .mount("/spider", routes![crawl, get_urls, get_url_count])
         .launch();
@@ -298,20 +343,49 @@ mod tests {
     fn test_convert_domain_to_url() {
         assert!(
             convert_domain_to_url(String::from("abcd")).is_err(),
-            "Invalid Domain Name!"
+            "Invalid Domain Name - Cannot be parsed"
         );
         assert!(
-            convert_domain_to_url(String::from("abcd.com.")).is_err(),
-            "Invalid Domain Name!"
+            convert_domain_to_url(String::from("google.com.")).is_err(),
+            "Invalid Domain Name - Cannot be parsed"
         );
         assert!(
             convert_domain_to_url(String::from("arstechnica.com")).is_ok(),
             "http://www.arstechnica.com"
         );
+        assert!(
+            convert_domain_to_url(String::from("411.com")).is_ok(),
+            "http://411.com"
+        );
+        assert!(
+            convert_domain_to_url(String::from("bad-.com")).is_err(),
+            "Invalid Domain Name - Cannot be parsed"
+        );
+        assert!(
+            convert_domain_to_url(String::from("-bad.com")).is_err(),
+            "Invalid Domain Name - Cannot be parsed"
+        );
+        assert!(
+            convert_domain_to_url(String::from("6-7.m-w.com")).is_err(),
+            "Parsable Domain Name - But Cannot resolve to valid IP address"
+        );
+        assert!(
+            convert_domain_to_url(String::from("200.100.50.1.uk")).is_ok(),
+            "http://200.100.50.1.uk"
+        );
+        assert!(
+            convert_domain_to_url(String::from("1.hostile.com")).is_ok(),
+            "http://1.hostile.com"
+        );
+        assert!(
+            convert_domain_to_url(String::from("1.com")).is_err(),
+            "Parsable Domain Name - But Cannot resolve to valid IP address"
+        );        
+
     }
 
     ///
-    /// With a valid domain name, it can only be checked  that a non empty Document and body text string are returned.
+    /// With a valid domain name, it can only be checked that a non empty Document and body text string are returned.
     ///
     #[test]
     fn test_get_doc_from_url_1() {
@@ -395,7 +469,7 @@ mod tests {
     ///  otherwise they will fail.
     ///
     /// Before executing MAKE SURE that the files "petapixel.com.json", "sdlkjfslf.efh.json" are present.
-    ///    
+    ///
 
     #[test]
     fn test_get_urls() {
