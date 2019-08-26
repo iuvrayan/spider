@@ -27,7 +27,7 @@ Open another power shell and execute the following command to get the ip address
 
 docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' spider_container
 
-Run the command "SET RUST_LOG=INFO" to set the logging level to INFO.
+Run the command "RUST_LOG=INFO" to set the logging level to INFO.
 
 Run the command "cargo run <ip_addr>", by replacing the <ip_add> with the above obtained ip address,
 and it will start the server.
