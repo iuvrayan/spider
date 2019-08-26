@@ -1,28 +1,20 @@
 extern crate reqwest;
 extern crate select;
-
-extern crate addr;
 extern crate dns_lookup;
-
 extern crate log;
 extern crate env_logger;
 
-
-use regex::Regex;
-
-use select::document::Document;
-use select::predicate::Name;
-
-use std::collections::HashMap;
-
+use::std::env;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::collections::HashMap;
 use log::{error, info};
-
+use regex::Regex;
 use dns_lookup::{lookup_host, lookup_addr};
-
 use actix_web::{web, App, HttpServer};
+use select::document::Document;
+use select::predicate::Name;
 
 ///
 /// This method takes a domain as input, extracts the urls from the page and appends to a vector.
@@ -39,9 +31,6 @@ use actix_web::{web, App, HttpServer};
 ///
 /// The GET method signature for this web service is : http://<ip address>:8000/spider/crawl/<domain>
 ///
-///
-//#[get("/crawl/<name>")]
-//fn crawl(name: &RawStr) -> String {
 fn crawl(domain: web::Path<String>) -> String {
     info!("Entered crawl method");
     //convert domain to url
@@ -52,9 +41,11 @@ fn crawl(domain: web::Path<String>) -> String {
         Ok(v) => url = v,
     }
 
-    // maximum threshhold number for the urls to crawl
+    //Set limit to 10, in case the value cannot be obtained from config
     let mut limit = 10;
 
+    //This is a design decision to read the limit for each call to crawl, 
+    //as crawl is independent for each domain
     match serde_any::from_file("Config.json") {
         Err(_) => {
             error!("Error reading url limit value. defualting to 10");
@@ -78,6 +69,9 @@ fn crawl(domain: web::Path<String>) -> String {
 
     //Async with Channels. Create Sender and Receiver
     let (tx, rx) = mpsc::channel();
+
+    //The actual crawled URLs will be more than the LIMIT, as the sub_urls down are added before next pass
+    //This is design decision to allow more URLS to store
     while urls.clone().lock().unwrap().len() < limit {
         let _tx = tx.clone();
 
@@ -117,6 +111,8 @@ fn crawl(domain: web::Path<String>) -> String {
         cur_url_index += 1;
     }
 
+    //As said, the total URL count will always be more than LIMIT, due to the insertion of sub urls above
+    //with out checking the limit
     info!(
         "total url hash pages count {} : ",
         urls_and_pages.lock().unwrap().len()
@@ -139,8 +135,6 @@ fn crawl(domain: web::Path<String>) -> String {
 ///
 /// The GET method signature for this web service is : http://<ip address>:8000/spider/get_urls/<domain>
 ///
-///
-//#[get("/get_urls/<name>")]
 fn get_urls(domain: web::Path<String>) -> String {
     info!("Entered get_urls method");
 
@@ -179,10 +173,9 @@ fn get_urls(domain: web::Path<String>) -> String {
 ///
 /// The GET method signature for this web service is : http://<ip address>:8000/spider/get_url_count/<domain>
 ///
-//#[get("/get_url_count/<name>")]
 fn get_url_count(domain : web::Path<String>) -> String {
     info!("Entered get_url_count method");
-
+    //let path = web::Path::from("fafjas");
     //create the file name from domain    
     let mut fname = domain.to_string();
     fname.push_str(".json");
@@ -204,9 +197,9 @@ fn get_url_count(domain : web::Path<String>) -> String {
 
 ///
 /// This method takes a domain as input, converts in into url by prefixing the domain name with http://
-/// It also does the following basic validations of the FQDA (Fully Qualified Domain Address).
+/// It also does the following FQDA (Fully Qualified Domain Address) validations.
 /// 
-/// Domain name composed of a series of labels concatenated with dots.    
+/// Domain name composed of a series of labels concatenated with dots. 
 /// Labels contain ASCII letters a-z and A-Z, the digits 0-9, and the hyphen ('-').
 /// Labels cannot start or end with hyphens
 /// Labels can start with numbers
@@ -246,16 +239,13 @@ fn convert_domain_to_url(domain: String) -> Result<String, String> {
             }
         } 
     }  
-}
-
-    
+}    
 
 ///
 /// This method takes a url as input and fires the http get request.
 /// Reads the response and converts the body text to Document object with nodes.
 /// The method returns both the plain body text and the DOM object document so that,
 /// the plain text can be stored for serialisation, and the document will be used to extract the urls further.
-///
 ///
 fn get_doc_from_url(url: String) -> (String, select::document::Document) {
     info!("Entered get_doc_from_url method");
@@ -289,7 +279,6 @@ fn get_doc_from_url(url: String) -> (String, select::document::Document) {
 /// Also this method ensures that the same url is not extracted twice, and does the checking
 /// before pushing the url into the vector.
 ///
-///
 fn get_urls_from_doc(doc: select::document::Document) -> Vec<String> {
     info!("Entered get_urls_from_doc method");
     //Store URLs in the Vector
@@ -322,8 +311,10 @@ fn get_urls_from_doc(doc: select::document::Document) -> Vec<String> {
 //The main function
 fn main() {
     env_logger::init();
-    info!("in main");   
-
+    info!("in main");     
+    
+    let mut args: Vec<String> = env::args().collect();
+    
     let server = HttpServer::new(|| {
         App::new()
             .route("/spider/crawl/{domain}", web::get().to(crawl))
@@ -331,7 +322,12 @@ fn main() {
             .route("/spider/get_url_count/{domain}", web::get().to(get_url_count))   
     });
 
-    server.bind("127.0.0.1:8000").unwrap().run().unwrap();
+    //get the server ip address into host
+    let host = &mut args[1];
+    host.push_str(":8000");
+    info!("host addr : {}", host);
+
+    server.bind(host.to_string()).unwrap().run().unwrap();
 }
 
 //=================================================================================================
@@ -341,7 +337,14 @@ mod tests {
     use super::*;
 
     ///
-    /// The tests are trivial as shown in asserts
+    /// Test for the validation of domain with following rules
+    /// 
+    /// Domain labels are concatenated with dots.    
+    /// Labels contain ASCII letters a-z and A-Z, the digits 0-9, and the hyphen ('-').
+    /// Labels cannot start or end with hyphens
+    /// Labels can start with numbers
+    /// Trailing dot is not allowed
+    /// This method also tests whether the given domain can be converted to a valid ip adress or not
     ///
     #[test]
     fn test_convert_domain_to_url() {
@@ -384,13 +387,12 @@ mod tests {
         assert!(
             convert_domain_to_url(String::from("1.com")).is_err(),
             "Parsable Domain Name - But Cannot resolve to valid IP address"
-        );        
-
+        );
     }
 
     ///
     /// With a valid domain name, it can only be checked that a non empty Document and body text string are returned.
-    ///
+    ///    
     #[test]
     fn test_get_doc_from_url_1() {
         let (body, doc) = get_doc_from_url(String::from("http://www.petapixel.com"));
@@ -403,7 +405,7 @@ mod tests {
 
     ///
     /// With an invalid domain name, it can only be checked that an empty body text string is returned.
-    ///
+    /// 
     #[test]
     fn test_get_doc_from_url_2() {
         //Empty test with invalid url
@@ -428,8 +430,7 @@ mod tests {
     /// </ul>
     ///
     /// There are only three valid urls, but one is a duplicate, so effectively it should return only two urls.
-    ///
-    ///
+    ///    
     #[test]
     fn test_get_urls_from_doc() {
         let markup = String::from("<p>You can reach Michael at:</p><ul><li><a href=\"https://example.com\">Website</a></li><li><a href=\"mailto:m.bluth@example.com\">Email</a></li><li><a href=\"https://html.com/attributes/a-href/\">Learn about the a href attribute</a></li><li><a href=\"tel:+123456789\">Phone</a></li><li><a href=\"https://html.com/attributes/a-href/\">Learn about the a href attribute Again</a></li></ul>");
@@ -452,19 +453,23 @@ mod tests {
     ///
     /// Even if the domain doesn't exit, it gives a success message, as long as the domain name is valid as per
     /// convert_domain_to_url() method.
-    ///
-    ///
+    ///    
     #[test]
     fn test_crawl() {
-        let resp = crawl(RawStr::from_str("arstechnica.com"));
+        //let domain = web::Path::new("arstechnica.com");
+
+        let resp = crawl(web::Path::from("arstechnica.com".to_string()));
+        assert_eq!(resp, "Successfully Crawled!");
+
+        let resp = crawl(web::Path::from("iuvrayan.blogspot.com".to_string()));
         assert_eq!(resp, "Successfully Crawled!");
 
         // Tehcnically valid domain name, but non existing
-        let resp2 = crawl(RawStr::from_str("nonexistingdomain.abc"));
+        let resp2 = crawl(web::Path::from("nonexistingdomain.abc".to_string()));
         assert_eq!(resp2, "Parsable Domain Name - But Cannot resolve to valid IP address");
 
         // Invalid domain name
-        let resp3 = crawl(RawStr::from_str("invalid_domain"));
+        let resp3 = crawl(web::Path::from("invalid_domain".to_string()));
         assert_eq!(resp3, "Invalid Domain Name - Cannot be parsed");
     }
 
@@ -472,21 +477,20 @@ mod tests {
     ///  If the json file corresponding to the domain is the present in the home directory the tests give succes,
     ///  otherwise they will fail.
     ///
-    /// Before executing MAKE SURE that the files "petapixel.com.json", "sdlkjfslf.efh.json" are present.
+    /// Before executing MAKE SURE that the file "iuvrayan.blogspot.com.json" is present.
     ///
-
     #[test]
     fn test_get_urls() {
         //This test gives valid urls as respose string. It can be verified manually that they are all unique.
-        let body = get_urls(RawStr::from_str("iuvrayan.blogspot.com"));
+        let body = get_urls(web::Path::from("iuvrayan.blogspot.com".to_string()));
         assert_ne!(body, "");
 
         // Tehcnically valid domain name crawled before, so it retuns the domain as url which is stored in json
-        let body2 = get_urls(RawStr::from_str("nonexistingdomain.abc"));
+        let body2 = get_urls(web::Path::from("nonexistingdomain.abc".to_string()));
         assert_eq!(body2.trim(), "IO error: The system cannot find the file specified. (os error 2)");
 
         // Invalid domain name throws error
-        let body3 = get_urls(RawStr::from_str("invalid_domain"));
+        let body3 = get_urls(web::Path::from("invalid_domain".to_string()));
         assert_eq!(
             body3,
             "IO error: The system cannot find the file specified. (os error 2)"
@@ -497,19 +501,18 @@ mod tests {
     ///  If the json file corresponding to the domain is the present in the home directory the tests give succes,
     ///  otherwise they will fail.
     ///
-    /// Before executing MAKE SURE that the files "petapixel.com.json", "sdlkjfslf.efh.json" are present.
-    ///    
-
+    /// Before executing MAKE SURE that the file "iuvrayan.blogspot.com.json", is present.
+    ///
     #[test]
     fn test_get_url_count() {
         //This the count of urls as string for the crawled domain.
-        let count1 = get_url_count(RawStr::from_str("iuvrayan.blogspot.com"));
+        let count1 = get_url_count(web::Path::from("iuvrayan.blogspot.com".to_string()));
         assert_eq!(count1.trim().parse::<usize>().unwrap(), 18);       
 
         // Invalid domain name
-        let count3 = get_url_count(RawStr::from_str("invalid_domain"));
+        let count2 = get_url_count(web::Path::from("invalid_domain".to_string()));
         assert_eq!(
-            count3,
+            count2,
             "IO error: The system cannot find the file specified. (os error 2)"
         );
     }

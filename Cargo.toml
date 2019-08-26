@@ -7,16 +7,13 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix-web = "1.0.5"
 reqwest = "0.9.20"
-actix-web = "1.0"
-
 select = "0.4.3"
-serde_any = "0.5.0"
-
-addr = "0.2.0"
-dns-lookup = "1.0.1"
 
 regex = "1.2.1"
+serde_any = "0.5.0"
+dns-lookup = "1.0.1"
 
 log = "0.4.0"
 env_logger = "0.6.2"
