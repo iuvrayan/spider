@@ -1,7 +1,3 @@
-#![feature(proc_macro_hygiene, decl_macro)]
-
-#[macro_use]
-extern crate rocket;
 extern crate reqwest;
 extern crate select;
 
@@ -11,9 +7,8 @@ extern crate dns_lookup;
 extern crate log;
 extern crate env_logger;
 
-use regex::Regex;
 
-use rocket::http::RawStr;
+use regex::Regex;
 
 use select::document::Document;
 use select::predicate::Name;
@@ -25,8 +20,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use log::{error, info};
 
-
 use dns_lookup::{lookup_host, lookup_addr};
+
+use actix_web::{web, App, HttpServer};
 
 ///
 /// This method takes a domain as input, extracts the urls from the page and appends to a vector.
@@ -44,13 +40,14 @@ use dns_lookup::{lookup_host, lookup_addr};
 /// The GET method signature for this web service is : http://<ip address>:8000/spider/crawl/<domain>
 ///
 ///
-#[get("/crawl/<name>")]
-fn crawl(name: &RawStr) -> String {
+//#[get("/crawl/<name>")]
+//fn crawl(name: &RawStr) -> String {
+fn crawl(domain: web::Path<String>) -> String {
     info!("Entered crawl method");
     //convert domain to url
     let url;
 
-    match convert_domain_to_url(name.to_string()) {
+    match convert_domain_to_url(domain.to_string()) {
         Err(e) => return e,
         Ok(v) => url = v,
     }
@@ -126,7 +123,7 @@ fn crawl(name: &RawStr) -> String {
     );
 
     //create the file name
-    let mut fname = name.to_string();
+    let mut fname = domain.to_string();
     fname.push_str(".json");
 
     //serialize the crawled pages and urls to a json file
@@ -143,12 +140,12 @@ fn crawl(name: &RawStr) -> String {
 /// The GET method signature for this web service is : http://<ip address>:8000/spider/get_urls/<domain>
 ///
 ///
-#[get("/get_urls/<name>")]
-fn get_urls(name: &RawStr) -> String {
+//#[get("/get_urls/<name>")]
+fn get_urls(domain: web::Path<String>) -> String {
     info!("Entered get_urls method");
-    //create the file name from domain
-    let name_str = name.as_str();
-    let mut fname = name_str.to_string();
+
+    //create the file name from domain   
+    let mut fname = domain.to_string();
     fname.push_str(".json");
 
     info!("file name {} ", fname);
@@ -182,12 +179,12 @@ fn get_urls(name: &RawStr) -> String {
 ///
 /// The GET method signature for this web service is : http://<ip address>:8000/spider/get_url_count/<domain>
 ///
-#[get("/get_url_count/<name>")]
-fn get_url_count(name: &RawStr) -> String {
+//#[get("/get_url_count/<name>")]
+fn get_url_count(domain : web::Path<String>) -> String {
     info!("Entered get_url_count method");
-    //create the file name from domain
-    let name_str = name.as_str();
-    let mut fname = name_str.to_string();
+
+    //create the file name from domain    
+    let mut fname = domain.to_string();
     fname.push_str(".json");
 
     info!("file name {} ", fname);
@@ -325,10 +322,16 @@ fn get_urls_from_doc(doc: select::document::Document) -> Vec<String> {
 //The main function
 fn main() {
     env_logger::init();
-    info!("in main");
-    rocket::ignite()
-        .mount("/spider", routes![crawl, get_urls, get_url_count])
-        .launch();
+    info!("in main");   
+
+    let server = HttpServer::new(|| {
+        App::new()
+            .route("/spider/crawl/{domain}", web::get().to(crawl))
+            .route("/spider/get_urls/{domain}", web::get().to(get_urls))
+            .route("/spider/get_url_count/{domain}", web::get().to(get_url_count))   
+    });
+
+    server.bind("127.0.0.1:8000").unwrap().run().unwrap();
 }
 
 //=================================================================================================
