@@ -146,8 +146,8 @@ fn get_urls(domain: web::Path<String>) -> String {
 
     //deserialize the file and get keys which are urls
     match serde_any::from_file(fname) {
-        Err(e) => {
-            return e.to_string();
+        Err(_) => {
+            return "IO error: The system cannot find the file specified. (os error 2)".to_string();
         }
         Ok(map) => {
             let urls_and_pages: HashMap<String, String> = map;
@@ -184,8 +184,8 @@ fn get_url_count(domain : web::Path<String>) -> String {
 
     //deserialize the file and get key count of urls
     match serde_any::from_file(fname) {
-        Err(e) => {
-            return e.to_string();
+        Err(_) => {
+            return "IO error: The system cannot find the file specified. (os error 2)".to_string();
         }
         Ok(map) => {
             let urls_and_pages: HashMap<String, String> = map;

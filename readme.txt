@@ -65,6 +65,10 @@ Running Unit Tests in the Local System:
 There are total 7 tests which includes the above services, along with internal functions, 
 each containing around 3 to 4 assertions each.
 
+To pass all the tests, after running the sever execute the following URL
+
+http://<host_ip>:8000/spider/crawl/iuvrayan.blogspot.com
+
 The tests can be run by the command "cargo test" locally.
 
 Generate Documenation:
