@@ -27,7 +27,6 @@ use log::{error, info};
 
 
 use dns_lookup::{lookup_host, lookup_addr};
-use std::net::IpAddr;
 
 ///
 /// This method takes a domain as input, extracts the urls from the page and appends to a vector.
@@ -208,15 +207,17 @@ fn get_url_count(name: &RawStr) -> String {
 
 ///
 /// This method takes a domain as input, converts in into url by prefixing the domain name with http://
-/// It also does basic validation of the domain address format.
+/// It also does the following basic validations of the FQDA (Fully Qualified Domain Address).
+/// 
+/// Domain name composed of a series of labels concatenated with dots.    
+/// Labels contain ASCII letters a-z and A-Z, the digits 0-9, and the hyphen ('-').
+/// Labels cannot start or end with hyphens
+/// Labels can start with numbers
+/// Trailing dot is not allowed
 ///
 fn convert_domain_to_url(domain: String) -> Result<String, String> {
     //Domain Name validation
-    //Composed of a series of labels concatenated with dots.    
-    //Labels contain ASCII letters a-z and A-Z, the digits 0-9, and the hyphen ('-').
-    //Labels cannot start or end with hyphens
-    //Labels can start with numbers
-    //Trailing dot is not allowed
+    //
     info!("Entered convert_domain_to_url method");
     info!("Input domain string : {}", domain);
 
@@ -452,16 +453,16 @@ mod tests {
     ///
     #[test]
     fn test_crawl() {
-        let resp = crawl(RawStr::from_str("petapixel.com"));
+        let resp = crawl(RawStr::from_str("arstechnica.com"));
         assert_eq!(resp, "Successfully Crawled!");
 
         // Tehcnically valid domain name, but non existing
         let resp2 = crawl(RawStr::from_str("nonexistingdomain.abc"));
-        assert_eq!(resp2, "Successfully Crawled!");
+        assert_eq!(resp2, "Parsable Domain Name - But Cannot resolve to valid IP address");
 
         // Invalid domain name
         let resp3 = crawl(RawStr::from_str("invalid_domain"));
-        assert_eq!(resp3, "Invalid Domain Name!");
+        assert_eq!(resp3, "Invalid Domain Name - Cannot be parsed");
     }
 
     ///
@@ -474,12 +475,12 @@ mod tests {
     #[test]
     fn test_get_urls() {
         //This test gives valid urls as respose string. It can be verified manually that they are all unique.
-        let body = get_urls(RawStr::from_str("petapixel.com"));
+        let body = get_urls(RawStr::from_str("iuvrayan.blogspot.com"));
         assert_ne!(body, "");
 
         // Tehcnically valid domain name crawled before, so it retuns the domain as url which is stored in json
         let body2 = get_urls(RawStr::from_str("nonexistingdomain.abc"));
-        assert_eq!(body2.trim(), "http://www.nonexistingdomain.abc");
+        assert_eq!(body2.trim(), "IO error: The system cannot find the file specified. (os error 2)");
 
         // Invalid domain name throws error
         let body3 = get_urls(RawStr::from_str("invalid_domain"));
@@ -499,12 +500,8 @@ mod tests {
     #[test]
     fn test_get_url_count() {
         //This the count of urls as string for the crawled domain.
-        let count = get_url_count(RawStr::from_str("petapixel.com"));
-        assert_eq!(usize::from_str_radix(count.trim(), 10).unwrap(), 74);
-
-        // Tehcnically valid domain name crawled, so it retuns the domain as url which is stored in json
-        let count2 = get_url_count(RawStr::from_str("nonexistingdomain.abc"));
-        assert_eq!(usize::from_str_radix(count2.trim(), 10).unwrap(), 1);
+        let count1 = get_url_count(RawStr::from_str("iuvrayan.blogspot.com"));
+        assert_eq!(count1.trim().parse::<usize>().unwrap(), 18);       
 
         // Invalid domain name
         let count3 = get_url_count(RawStr::from_str("invalid_domain"));
